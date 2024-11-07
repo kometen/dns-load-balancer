@@ -1,5 +1,5 @@
-use futures::future::select_all;
-use hickory_proto::op::Message;
+use futures::future::join_all;
+use hickory_proto::op::{Message, MessageType, ResponseCode};
 use hickory_proto::serialize::binary::BinDecodable;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -20,14 +20,43 @@ struct Server {
 }
 
 impl Server {
-    async fn query_dns(dns_server: &str, query_data: Vec<u8>) -> io::Result<(String, Vec<u8>)> {
+    async fn query_dns(
+        dns_server: &str,
+        query_data: Vec<u8>,
+    ) -> io::Result<(String, Option<Vec<u8>>)> {
         let upstream = UdpSocket::bind("0.0.0.0:0").await?;
         upstream.connect(dns_server).await?;
+
+        let timeout = tokio::time::Duration::from_secs(3);
         upstream.send(&query_data).await?;
 
         let mut response_buf = vec![0; 1024];
-        let size = upstream.recv(&mut response_buf).await?;
-        Ok((dns_server.to_string(), response_buf[..size].to_vec()))
+        match tokio::time::timeout(timeout, upstream.recv(&mut response_buf)).await {
+            Ok(Ok(size)) => {
+                if let Ok(message) = Message::from_bytes(&response_buf[..size]) {
+                    if message.response_code() == ResponseCode::NoError
+                        && !message.answers().is_empty()
+                    {
+                        println!("{} returned a positive response", dns_server);
+                        Ok((dns_server.to_string(), Some(response_buf[..size].to_vec())))
+                    } else {
+                        println!("{} returned no results (NXDOMAIN or empty", dns_server);
+                        Ok((dns_server.to_string(), None))
+                    }
+                } else {
+                    println!("{} returned invalid DNS message", dns_server);
+                    Ok((dns_server.to_string(), None))
+                }
+            }
+            Ok(Err(e)) => {
+                println!("{} query failed: {}", dns_server, e);
+                Ok((dns_server.to_string(), None))
+            }
+            Err(_) => {
+                println!("{} timed out", dns_server);
+                Ok((dns_server.to_string(), None))
+            }
+        }
     }
 
     async fn handle_request(
@@ -49,15 +78,30 @@ impl Server {
                         })
                         .collect();
 
-                    let (result, _index, _remaining) = select_all(futures).await;
-                    match result {
-                        Ok((server, response_data)) => {
+                    let results = join_all(futures).await;
+                    let first_positive_response = results
+                        .into_iter()
+                        .filter_map(|result| result.ok())
+                        .find_map(|(server, maybe_response)| {
+                            maybe_response.map(|response| (server, response))
+                        });
+
+                    match first_positive_response {
+                        Some((server, response_data)) => {
                             println!("First response from {}", server);
                             socket.send_to(&response_data, peer).await?;
                             println!("Response sent to {}", peer);
                         }
-                        Err(e) => {
-                            eprintln!("All DNS queries failed: {}", e);
+                        None => {
+                            println!(
+                                "No positive response received, sending last NXDOMAIN response"
+                            );
+                            let mut msg = Message::new();
+                            msg.set_response_code(ResponseCode::NXDomain);
+                            msg.set_message_type(MessageType::Response);
+                            if let Ok(response_data) = msg.to_vec() {
+                                socket.send_to(&response_data, peer).await?;
+                            }
                         }
                     }
                 }
