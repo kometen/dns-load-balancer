@@ -30,6 +30,35 @@ impl Server {
         size: usize,
         peer: SocketAddr,
     ) -> std::io::Result<()> {
+        if let Ok(message) = Message::from_bytes(&buf[..size]) {
+            for query in message.queries() {
+                println!(
+                    "Received DNS query: {} (type: {}) from {}",
+                    query.name(),
+                    query.query_type(),
+                    peer
+                );
+
+                // Only handle A records
+                if query.query_type().to_string() != "A" {
+                    println!("Non-A record query, sending empty response");
+                    let mut response = Message::new();
+                    response.set_id(message.id());
+                    response.set_message_type(MessageType::Response);
+                    response.set_response_code(ResponseCode::NoError);
+
+                    for q in message.queries() {
+                        response.add_query(q.clone());
+                    }
+
+                    if let Ok(response_data) = response.to_vec() {
+                        socket.send_to(&response_data, peer).await?;
+                        return Ok(());
+                    }
+                }
+            }
+        }
+
         if let Some(cached_response) = cache.get(&buf[..size]).await {
             println!("Cached response sent to {}", peer);
             socket.send_to(&cached_response, peer).await?;
