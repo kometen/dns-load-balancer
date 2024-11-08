@@ -21,3 +21,12 @@ delay. The client in this case is `psql` to access a PostgreSQL database.
 
 So a check is added that if the request is for a `cluster.local.` any request other
 than a type A will be ignored.
+
+Clone, build and run the project with
+
+```
+cargo build [--release]
+sudo ./target/[debug|release]/dns-load-balancer
+```
+
+Since it connects to a port below 1024 you need priviliged access for it to start.
