@@ -36,21 +36,28 @@ impl DnsCache {
         }
     }
 
+    pub fn update_dns_id(query: &[u8], response: Vec<u8>) -> Option<Vec<u8>> {
+        if let (Ok(query_message), Ok(mut response_message)) =
+            (Message::from_bytes(query), Message::from_bytes(&response))
+        {
+            let old_id = response_message.id();
+            let new_id = query_message.id();
+            println!("Updating DNS id from {} to {}", old_id, new_id);
+            response_message.set_id(new_id);
+            if let Ok(updated_response) = response_message.to_vec() {
+                return Some(updated_response);
+            }
+        }
+        println!("Failed to update DNS id");
+        None
+    }
+
     pub async fn get(&self, query: &[u8]) -> Option<Vec<u8>> {
         if let Some(key) = Self::create_cache_key(query) {
             let cache = self.cache.read().await;
             if let Some(entry) = cache.get(&key) {
                 if entry.expires_at > SystemTime::now() {
-                    if let (Ok(query_message), Ok(mut cached_message)) = (
-                        Message::from_bytes(query),
-                        Message::from_bytes(&entry.response),
-                    ) {
-                        cached_message.set_id(query_message.id());
-                        if let Ok(updated_response) = cached_message.to_vec() {
-                            return Some(updated_response);
-                        }
-                    }
-                    return Some(entry.response.clone());
+                    return Self::update_dns_id(query, entry.response.clone());
                 }
             }
         }
