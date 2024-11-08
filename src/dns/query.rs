@@ -20,21 +20,11 @@ pub async fn query_dns(
             if let Ok(message) = Message::from_bytes(&response_buf[..size]) {
                 if message.response_code() == ResponseCode::NoError && !message.answers().is_empty()
                 {
-                    Ok((dns_server.to_string(), Some(response_buf[..size].to_vec())))
-                } else {
-                    Ok((dns_server.to_string(), None))
+                    return Ok((dns_server.to_string(), Some(response_buf[..size].to_vec())));
                 }
-            } else {
-                Ok((dns_server.to_string(), None))
             }
-        }
-        Ok(Err(e)) => {
-            println!("{} query failed: {}", dns_server, e);
             Ok((dns_server.to_string(), None))
         }
-        Err(_) => {
-            println!("{} timed out", dns_server);
-            Ok((dns_server.to_string(), None))
-        }
+        _ => Ok((dns_server.to_string(), None)),
     }
 }
