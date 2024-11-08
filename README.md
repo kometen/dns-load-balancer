@@ -26,7 +26,7 @@ Clone, build and run the project with
 
 ```
 cargo build [--release]
-sudo ./target/[debug|release]/dns-load-balancer
+sudo ./target/[debug|release]/dns_load_balancer
 ```
 
 Since it connects to a port below 1024 you need priviliged access for it to start.

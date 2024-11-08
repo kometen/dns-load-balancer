@@ -1,5 +1,5 @@
 [package]
-name = "dns-load-balancer"
+name = "dns_load_balancer"
 version = "0.1.0"
 edition = "2021"
 
