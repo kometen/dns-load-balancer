@@ -36,8 +36,6 @@ impl Server {
             return Ok(());
         }
 
-        println!("Cache miss, querying DNS servers for {}", peer);
-
         match Message::from_bytes(&buf[..size]) {
             Ok(query) => match query.to_vec() {
                 Ok(encoded_query) => {
@@ -64,6 +62,7 @@ impl Server {
         original_query: Vec<u8>,
         peer: SocketAddr,
     ) -> std::io::Result<()> {
+        let original_query_for_error = original_query.clone();
         let (tx, rx) = tokio::sync::oneshot::channel();
         let mut tx_opt = Some(tx);
 
@@ -74,32 +73,20 @@ impl Server {
 
             tokio::spawn(async move {
                 if let Ok((server, Some(response))) = query_dns(dns_server, query_data).await {
-                    // Update DNS id before sending
-                    if let Some(updated_response) =
-                        DnsCache::update_dns_id(&original_query_cloned, response)
-                    {
-                        if let Ok(response_message) = Message::from_bytes(&updated_response) {
-                            if let Ok(query_message) = Message::from_bytes(&original_query_cloned) {
-                                if response_message.id() == query_message.id() {
-                                    if let Some(tx) = tx {
-                                        println!(
-                                            "Sending response with ID {}",
-                                            response_message.id()
-                                        );
-                                        let _ = tx.send((server, updated_response));
-                                        return;
-                                    }
-                                } else {
-                                    println!(
-                                        "ID mismatch after update: expected {} got {}",
-                                        query_message.id(),
-                                        response_message.id()
-                                    );
+                    if let Ok(response_message) = Message::from_bytes(&response) {
+                        if !response_message.answers().is_empty() {
+                            if let Some(updated_response) =
+                                DnsCache::update_dns_id(&original_query_cloned, response)
+                            {
+                                if let Some(tx) = tx {
+                                    let _ = tx.send((server, updated_response));
+                                    return;
                                 }
                             }
+                        } else {
+                            println!("Empty response from {}", server);
                         }
                     }
-                    println!("Failed to update response ID from {}", server);
                 }
             });
 
@@ -109,23 +96,7 @@ impl Server {
         }
 
         match tokio::time::timeout(Duration::from_secs(config::DNS_TIMEOUT), rx).await {
-            Ok(Ok((server, response_data))) => {
-                println!("First valid response from {}", server);
-
-                // Last validation before caching
-                if let (Ok(query_message), Ok(response_message)) = (
-                    Message::from_bytes(&original_query),
-                    Message::from_bytes(&response_data),
-                ) {
-                    if query_message.id() != response_message.id() {
-                        println!(
-                            "Final ID check failed: expected {} got {}",
-                            query_message.id(),
-                            response_message.id()
-                        );
-                    }
-                }
-
+            Ok(Ok((_, response_data))) => {
                 cache
                     .set(
                         original_query,
@@ -135,19 +106,15 @@ impl Server {
                     .await;
 
                 socket.send_to(&response_data, peer).await?;
-                println!("Response sent to {}", peer);
             }
 
             _ => {
-                println!("No valid response received, sending NXDOMAIN to {}", peer);
                 let mut msg = Message::new();
                 msg.set_response_code(ResponseCode::NXDomain);
                 msg.set_message_type(MessageType::Response);
 
-                // Set correct id from the original query
-                if let Ok(query_message) = Message::from_bytes(&original_query) {
+                if let Ok(query_message) = Message::from_bytes(&original_query_for_error) {
                     let query_id = query_message.id();
-                    println!("Setting NXDOMAIN response id to {}", query_id);
                     msg.set_id(query_id);
                 }
 

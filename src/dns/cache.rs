@@ -40,9 +40,7 @@ impl DnsCache {
         if let (Ok(query_message), Ok(mut response_message)) =
             (Message::from_bytes(query), Message::from_bytes(&response))
         {
-            let old_id = response_message.id();
             let new_id = query_message.id();
-            println!("Updating DNS id from {} to {}", old_id, new_id);
             response_message.set_id(new_id);
             if let Ok(updated_response) = response_message.to_vec() {
                 return Some(updated_response);

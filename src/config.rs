@@ -6,4 +6,4 @@ pub const DNS_SERVERS: &[&str] = &[
 
 pub const LOCALHOST_PORT: &str = "127.0.0.1:53";
 pub const CACHE_TTL: u64 = 300; // 5 minutes
-pub const DNS_TIMEOUT: u64 = 3; // 3 seconds
+pub const DNS_TIMEOUT: u64 = 3; // seconds
