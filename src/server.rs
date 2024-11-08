@@ -32,13 +32,6 @@ impl Server {
     ) -> std::io::Result<()> {
         if let Ok(message) = Message::from_bytes(&buf[..size]) {
             for query in message.queries() {
-                println!(
-                    "Received DNS query: {} (type: {}) from {}",
-                    query.name(),
-                    query.query_type(),
-                    peer
-                );
-
                 // Only handle A records for kubernetes-domains
                 if query
                     .name()
@@ -75,7 +68,6 @@ impl Server {
         }
 
         if let Some(cached_response) = cache.get(&buf[..size]).await {
-            println!("Cached response sent to {}", peer);
             socket.send_to(&cached_response, peer).await?;
             return Ok(());
         }
