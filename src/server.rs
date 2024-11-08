@@ -168,7 +168,6 @@ impl Server {
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(Duration::from_secs(60)).await;
-                cache_clone.dump_cache().await;
                 cache_clone.cleanup().await;
             }
         });

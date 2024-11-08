@@ -79,18 +79,4 @@ impl DnsCache {
         let mut cache = self.cache.write().await;
         cache.retain(|_, entry| entry.expires_at > SystemTime::now());
     }
-
-    pub async fn dump_cache(&self) {
-        let cache = self.cache.read().await;
-        println!("Current cache contents:");
-        println!("Total entries: {}", cache.len());
-        for (query, entry) in cache.iter() {
-            println!(
-                "Query size: {}, Response size: {}, Expires at: {:?}",
-                query.len(),
-                entry.response.len(),
-                entry.expires_at
-            );
-        }
-    }
 }
