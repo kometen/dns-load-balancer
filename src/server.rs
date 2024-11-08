@@ -39,21 +39,36 @@ impl Server {
                     peer
                 );
 
-                // Only handle A records
-                if query.query_type().to_string() != "A" {
-                    println!("Non-A record query, sending empty response");
-                    let mut response = Message::new();
-                    response.set_id(message.id());
-                    response.set_message_type(MessageType::Response);
-                    response.set_response_code(ResponseCode::NoError);
+                // Only handle A records for kubernetes-domains
+                if query
+                    .name()
+                    .to_ascii()
+                    .as_str()
+                    .ends_with(config::KUBERNETES_DOMAIN)
+                    || query
+                        .name()
+                        .to_ascii()
+                        .as_str()
+                        .ends_with(&format!("{}.", config::KUBERNETES_DOMAIN))
+                {
+                    if query.query_type().to_string() != "A" {
+                        println!(
+                            "Non-A record query for domain {}, sending empty response",
+                            config::KUBERNETES_DOMAIN
+                        );
+                        let mut response = Message::new();
+                        response.set_id(message.id());
+                        response.set_message_type(MessageType::Response);
+                        response.set_response_code(ResponseCode::NoError);
 
-                    for q in message.queries() {
-                        response.add_query(q.clone());
-                    }
+                        for q in message.queries() {
+                            response.add_query(q.clone());
+                        }
 
-                    if let Ok(response_data) = response.to_vec() {
-                        socket.send_to(&response_data, peer).await?;
-                        return Ok(());
+                        if let Ok(response_data) = response.to_vec() {
+                            socket.send_to(&response_data, peer).await?;
+                            return Ok(());
+                        }
                     }
                 }
             }
