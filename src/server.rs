@@ -31,10 +31,7 @@ impl Server {
         size: usize,
         peer: SocketAddr,
     ) -> std::io::Result<()> {
-        println!("Handling request from {}", peer);
-
         if let Some(cached_response) = cache.get(&buf[..size]).await {
-            println!("Cache hit!");
             socket.send_to(&cached_response, peer).await?;
             return Ok(());
         }
@@ -60,9 +57,7 @@ impl Server {
                         });
 
                     match first_positive_response {
-                        Some((server, response_data)) => {
-                            println!("First response from {}", server);
-
+                        Some((_, response_data)) => {
                             cache
                                 .set(
                                     buf[..size].to_vec(),
@@ -72,12 +67,8 @@ impl Server {
                                 .await;
 
                             socket.send_to(&response_data, peer).await?;
-                            println!("Response sent to {}", peer);
                         }
                         None => {
-                            println!(
-                                "No positive response received, sending last NXDOMAIN response"
-                            );
                             let mut msg = Message::new();
                             msg.set_response_code(ResponseCode::NXDomain);
                             msg.set_message_type(MessageType::Response);
@@ -100,6 +91,7 @@ impl Server {
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(Duration::from_secs(60)).await;
+                cache_clone.dump_cache().await;
                 cache_clone.cleanup().await;
             }
         });

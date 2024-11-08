@@ -20,14 +20,11 @@ pub async fn query_dns(
             if let Ok(message) = Message::from_bytes(&response_buf[..size]) {
                 if message.response_code() == ResponseCode::NoError && !message.answers().is_empty()
                 {
-                    println!("{} returned a positive response", dns_server);
                     Ok((dns_server.to_string(), Some(response_buf[..size].to_vec())))
                 } else {
-                    println!("{} returned no results", dns_server);
                     Ok((dns_server.to_string(), None))
                 }
             } else {
-                println!("{} returned invalid DNS message", dns_server);
                 Ok((dns_server.to_string(), None))
             }
         }
