@@ -44,11 +44,8 @@ impl Server {
                         .as_str()
                         .ends_with(&format!("{}.", config::KUBERNETES_DOMAIN))
                 {
+                    // Non-A record query for kubernetes-domain, send empty response,
                     if query.query_type().to_string() != "A" {
-                        println!(
-                            "Non-A record query for domain {}, sending empty response",
-                            config::KUBERNETES_DOMAIN
-                        );
                         let mut response = Message::new();
                         response.set_id(message.id());
                         response.set_message_type(MessageType::Response);
