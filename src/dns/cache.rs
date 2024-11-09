@@ -46,7 +46,6 @@ impl DnsCache {
                 return Some(updated_response);
             }
         }
-        println!("Failed to update DNS id");
         None
     }
 

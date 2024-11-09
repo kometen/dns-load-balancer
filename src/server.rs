@@ -99,13 +99,12 @@ impl Server {
         peer: SocketAddr,
     ) -> std::io::Result<()> {
         let original_query_for_error = original_query.clone();
-        let (tx, rx) = tokio::sync::oneshot::channel();
-        let mut tx_opt = Some(tx);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(config::DNS_SERVERS.len());
 
         for &dns_server in config::DNS_SERVERS {
             let query_data = encoded_query.clone();
             let original_query_cloned = original_query.clone();
-            let tx = tx_opt.take();
+            let tx = tx.clone();
 
             tokio::spawn(async move {
                 if let Ok((server, Some(response))) = query_dns(dns_server, query_data).await {
@@ -114,10 +113,7 @@ impl Server {
                             if let Some(updated_response) =
                                 DnsCache::update_dns_id(&original_query_cloned, response)
                             {
-                                if let Some(tx) = tx {
-                                    let _ = tx.send((server, updated_response));
-                                    return;
-                                }
+                                let _ = tx.send((server, updated_response)).await;
                             }
                         } else {
                             println!("Empty response from {}", server);
@@ -126,13 +122,11 @@ impl Server {
                 }
             });
 
-            if tx_opt.is_none() {
-                break;
-            }
+            //drop(tx);
         }
 
-        match tokio::time::timeout(Duration::from_secs(config::DNS_TIMEOUT), rx).await {
-            Ok(Ok((_, response_data))) => {
+        match tokio::time::timeout(Duration::from_secs(config::DNS_TIMEOUT), rx.recv()).await {
+            Ok(Some((_, response_data))) => {
                 cache
                     .set(
                         original_query,
