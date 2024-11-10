@@ -95,6 +95,7 @@ impl Server {
         original_query: Vec<u8>,
         peer: SocketAddr,
     ) -> std::io::Result<()> {
+        let timeout = tokio::time::Duration::from_secs(config::DNS_TIMEOUT);
         let original_query_for_error = original_query.clone();
         let (tx, mut rx) = tokio::sync::mpsc::channel(config::DNS_SERVERS.len());
 
@@ -105,16 +106,29 @@ impl Server {
 
             tokio::spawn(async move {
                 let result = if dns_server.use_tls {
-                    query_dns_tls(&dns_server.address, query_data).await
+                    match tokio::time::timeout(
+                        timeout,
+                        query_dns_tls(&dns_server.address, query_data),
+                    )
+                    .await
+                    {
+                        Ok(result) => result,
+                        Err(_) => Ok((dns_server.address.to_string(), None)),
+                    }
                 } else {
-                    query_dns(&dns_server.address, query_data).await
+                    match tokio::time::timeout(timeout, query_dns(&dns_server.address, query_data))
+                        .await
+                    {
+                        Ok(result) => result,
+                        Err(_) => Ok((dns_server.address.to_string(), None)),
+                    }
                 };
 
                 if let Ok((server, Some(response))) = result {
                     if let Ok(response_message) = Message::from_bytes(&response) {
                         if !response_message.answers().is_empty() {
                             if let Some(updated_response) =
-                                DnsCache::update_dns_id(&original_query_cloned, response)
+                                DnsCache::update_dns_id(&original_query_cloned, response.to_vec())
                             {
                                 let _ = tx.send((server, updated_response)).await;
                             }

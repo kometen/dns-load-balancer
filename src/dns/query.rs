@@ -8,8 +8,6 @@ use tokio_rustls::rustls::pki_types::ServerName;
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tokio_rustls::TlsConnector;
 
-use crate::config;
-
 pub async fn query_dns_tls(
     dns_server: &str,
     query_data: Vec<u8>,
@@ -68,11 +66,20 @@ pub async fn query_dns(
     let upstream = UdpSocket::bind("0.0.0.0:0").await?;
     upstream.connect(addr).await?;
 
-    let timeout = tokio::time::Duration::from_secs(config::DNS_TIMEOUT);
-    upstream.send(&query_data).await?;
-
     let mut response_buf = vec![0; 1024];
-    match tokio::time::timeout(timeout, upstream.recv(&mut response_buf)).await {
+
+    upstream.send(&query_data).await?;
+    upstream.recv(&mut response_buf).await?;
+
+    if let Ok(message) = Message::from_bytes(&response_buf) {
+        if message.response_code() == ResponseCode::NoError && !message.answers().is_empty() {
+            return Ok((dns_server.to_string(), Some(response_buf)));
+        }
+    }
+
+    Ok((dns_server.to_string(), None))
+
+    /*     match tokio::time::timeout(timeout, upstream.recv(&mut response_buf)).await {
         Ok(Ok(size)) => {
             if let Ok(message) = Message::from_bytes(&response_buf[..size]) {
                 if message.response_code() == ResponseCode::NoError && !message.answers().is_empty()
@@ -83,5 +90,5 @@ pub async fn query_dns(
             Ok((dns_server.to_string(), None))
         }
         _ => Ok((dns_server.to_string(), None)),
-    }
+    }*/
 }
