@@ -1,6 +1,6 @@
 use crate::config;
 use crate::dns::cache::DnsCache;
-use crate::dns::query::query_dns;
+use crate::dns::query::{query_dns, query_dns_tls};
 use hickory_proto::op::{Message, MessageType, ResponseCode};
 use hickory_proto::serialize::binary::BinDecodable;
 use std::net::SocketAddr;
@@ -98,13 +98,19 @@ impl Server {
         let original_query_for_error = original_query.clone();
         let (tx, mut rx) = tokio::sync::mpsc::channel(config::DNS_SERVERS.len());
 
-        for &dns_server in config::DNS_SERVERS {
+        for dns_server in config::DNS_SERVERS {
             let query_data = encoded_query.clone();
             let original_query_cloned = original_query.clone();
             let tx = tx.clone();
 
             tokio::spawn(async move {
-                if let Ok((server, Some(response))) = query_dns(dns_server, query_data).await {
+                let result = if dns_server.use_tls {
+                    query_dns_tls(&dns_server.address, query_data).await
+                } else {
+                    query_dns(&dns_server.address, query_data).await
+                };
+
+                if let Ok((server, Some(response))) = result {
                     if let Ok(response_message) = Message::from_bytes(&response) {
                         if !response_message.answers().is_empty() {
                             if let Some(updated_response) =
