@@ -3,7 +3,7 @@ mod dns;
 mod server;
 
 use server::Server;
-use tokio::net::UdpSocket;
+use tokio::{net::UdpSocket, signal};
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
@@ -22,19 +22,37 @@ async fn main() -> std::io::Result<()> {
     let server_v4 = Server::new(socket_v4, 1024);
     let server_v6 = Server::new(socket_v6, 1024);
 
-    tokio::select! {
-        result = server_v4.run() => {
-            if let Err(e) = result {
-                eprintln!("IPv4 server error: {}", e);
+    // Shutdown-channel
+    let (shutdown_tx, shutdown_rx_v4) = tokio::sync::broadcast::channel(1);
+    let shutdown_rx_v6 = shutdown_rx_v4.resubscribe();
+
+    let server_handle = tokio::spawn(async move {
+        tokio::select! {
+            _ = server_v4.run(shutdown_rx_v4) => {
+                    println!("IPv4 server stopped normally");
             }
+
+            _ = server_v6.run(shutdown_rx_v6) => {
+                    println!("IPv6 server stopped normally");
+            }
+        }
+    });
+
+    signal::ctrl_c().await?;
+    println!("\nReceived Ctrl+C, shutting down ...");
+    let _ = shutdown_tx.send(());
+
+    tokio::select! {
+        _ = server_handle => {
+            println!("Servers shut down successfully");
         }
 
-        result = server_v6.run() => {
-            if let Err(e) = result {
-                eprintln!("IPv6 server error: {}", e);
-            }
+        _ = tokio::time::sleep(std::time::Duration::from_secs(5)) => {
+            println!("Shutdown timed out after 5 seconds");
         }
     }
+
+    println!("Server shutdown complete");
 
     Ok(())
 }

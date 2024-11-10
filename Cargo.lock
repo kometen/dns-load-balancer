@@ -195,6 +195,7 @@ version = "0.1.0"
 dependencies = [
  "futures",
  "hickory-proto",
+ "lazy_static",
  "tokio",
  "tokio-rustls",
  "webpki-roots",

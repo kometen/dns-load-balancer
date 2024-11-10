@@ -174,28 +174,60 @@ impl Server {
         Ok(())
     }
 
-    pub async fn run(self) -> std::io::Result<()> {
+    pub async fn run(
+        self,
+        mut shutdown: tokio::sync::broadcast::Receiver<()>,
+    ) -> std::io::Result<()> {
         let cache_clone = Arc::clone(&self.cache);
+
+        let mut shutdown_cleanup = shutdown.resubscribe();
+
         tokio::spawn(async move {
             loop {
-                tokio::time::sleep(Duration::from_secs(60)).await;
-                cache_clone.cleanup().await;
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(60)) => {
+                        cache_clone.cleanup().await;
+                    }
+
+                    _ = shutdown_cleanup.recv() => {
+                        println!("Cleanup task shutting down");
+                        break;
+                    }
+                }
             }
         });
 
         loop {
             let mut buf = vec![0; self.buf_size];
-            let (size, peer) = self.socket.recv_from(&mut buf).await?;
-            let socket_clone = Arc::clone(&self.socket);
-            let cache_clone = Arc::clone(&self.cache);
 
-            tokio::spawn(async move {
-                if let Err(e) =
-                    Server::handle_request(socket_clone, cache_clone, buf, size, peer).await
-                {
-                    eprintln!("Error handling request: {}", e);
+            tokio::select! {
+                result = self.socket.recv_from(&mut buf) => {
+                    match result {
+                        Ok((size, peer)) => {
+                            let socket_clone = Arc::clone(&self.socket);
+                            let cache_clone = Arc::clone(&self.cache);
+                            let mut shutdown_handler = shutdown.resubscribe();
+
+                            tokio::spawn(async move {
+                                tokio::select! {
+                                    _ = Server::handle_request(socket_clone, cache_clone, buf, size, peer) => {}
+                                        _ = shutdown_handler.recv() => {
+                                            println!("Request handler shutting down");
+                                        }
+                                }
+                            });
+                        }
+                        Err(e) => eprintln!("Error receiving: {}", e),
+                    }
                 }
-            });
+                _ = shutdown.recv() => {
+                    println!("Main server loop shutting down");
+                    break;
+                }
+            }
         }
+
+        println!("Server shutdown complete");
+        Ok(())
     }
 }

@@ -1,13 +1,39 @@
 use hickory_proto::op::{Message, ResponseCode};
 use hickory_proto::serialize::binary::BinDecodable;
+use lazy_static::lazy_static;
+use std::collections::HashMap;
 use std::net::ToSocketAddrs;
 use std::sync::Arc;
 use tokio::io::{self, AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpStream, UdpSocket};
+use tokio::sync::Mutex;
 use tokio_rustls::rustls::pki_types::ServerName;
 use tokio_rustls::rustls::{ClientConfig, RootCertStore};
 use tokio_rustls::TlsConnector;
 
+lazy_static! {
+    static ref TLS_CONNECTIONS: Mutex<HashMap<String, Arc<TlsConnector>>> =
+        Mutex::new(HashMap::new());
+}
+
+async fn get_tls_connector(dns_server: &str) -> Arc<TlsConnector> {
+    let mut connections: tokio::sync::MutexGuard<'_, HashMap<String, Arc<TlsConnector>>> =
+        TLS_CONNECTIONS.lock().await;
+
+    if let Some(connector) = connections.get(dns_server) {
+        connector.clone()
+    } else {
+        let mut root_cert_store = RootCertStore::empty();
+        root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        let config = ClientConfig::builder()
+            .with_root_certificates(root_cert_store)
+            .with_no_client_auth();
+
+        let connector = Arc::new(TlsConnector::from(Arc::new(config)));
+        connections.insert(dns_server.to_string(), connector.clone());
+        connector
+    }
+}
 pub async fn query_dns_tls(
     dns_server: &str,
     query_data: Vec<u8>,
@@ -17,12 +43,7 @@ pub async fn query_dns_tls(
         std::io::Error::new(std::io::ErrorKind::NotFound, "Failed to resolve DNS server")
     })?;
 
-    let mut root_cert_store = RootCertStore::empty();
-    root_cert_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-    let config = ClientConfig::builder()
-        .with_root_certificates(root_cert_store)
-        .with_no_client_auth();
-    let connector = TlsConnector::from(Arc::new(config));
+    let connector = get_tls_connector(dns_server).await;
 
     // Connect using TLS
     let stream = TcpStream::connect(addr).await?;
@@ -78,17 +99,4 @@ pub async fn query_dns(
     }
 
     Ok((dns_server.to_string(), None))
-
-    /*     match tokio::time::timeout(timeout, upstream.recv(&mut response_buf)).await {
-        Ok(Ok(size)) => {
-            if let Ok(message) = Message::from_bytes(&response_buf[..size]) {
-                if message.response_code() == ResponseCode::NoError && !message.answers().is_empty()
-                {
-                    return Ok((dns_server.to_string(), Some(response_buf[..size].to_vec())));
-                }
-            }
-            Ok((dns_server.to_string(), None))
-        }
-        _ => Ok((dns_server.to_string(), None)),
-    }*/
 }
