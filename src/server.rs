@@ -106,9 +106,22 @@ impl Server {
 
             tokio::spawn(async move {
                 let result = if dns_server.use_tls {
-                    query_dns_tls(&dns_server.address, query_data).await
+                    match tokio::time::timeout(
+                        timeout,
+                        query_dns_tls(&dns_server.address, query_data),
+                    )
+                    .await
+                    {
+                        Ok(result) => result,
+                        Err(_) => Ok((dns_server.address.to_string(), None)),
+                    }
                 } else {
-                    query_dns(&dns_server.address, query_data).await
+                    match tokio::time::timeout(timeout, query_dns(&dns_server.address, query_data))
+                        .await
+                    {
+                        Ok(result) => result,
+                        Err(_) => Ok((dns_server.address.to_string(), None)),
+                    }
                 };
 
                 if let Ok((server, Some(response))) = result {
