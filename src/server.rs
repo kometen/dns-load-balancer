@@ -1,4 +1,4 @@
-use crate::config;
+use crate::config::{ServerConfig, CACHE_TTL, DNS_TIMEOUT, KUBERNETES_DOMAIN};
 use crate::dns::cache::DnsCache;
 use crate::dns::query::{query_dns, query_dns_tls};
 use hickory_proto::op::{Message, MessageType, ResponseCode};
@@ -12,14 +12,16 @@ pub struct Server {
     socket: Arc<UdpSocket>,
     cache: Arc<DnsCache>,
     buf_size: usize,
+    dns_servers: Arc<Vec<ServerConfig>>,
 }
 
 impl Server {
-    pub fn new(socket: UdpSocket, buf_size: usize) -> Self {
+    pub fn new(socket: UdpSocket, buf_size: usize, dns_servers: Vec<ServerConfig>) -> Self {
         Self {
             socket: Arc::new(socket),
             cache: Arc::new(DnsCache::new()),
             buf_size,
+            dns_servers: Arc::new(dns_servers),
         }
     }
 
@@ -29,6 +31,7 @@ impl Server {
         buf: Vec<u8>,
         size: usize,
         peer: SocketAddr,
+        dns_servers: Arc<Vec<ServerConfig>>,
     ) -> std::io::Result<()> {
         if let Ok(message) = Message::from_bytes(&buf[..size]) {
             for query in message.queries() {
@@ -37,12 +40,12 @@ impl Server {
                     .name()
                     .to_ascii()
                     .as_str()
-                    .ends_with(config::KUBERNETES_DOMAIN)
+                    .ends_with(KUBERNETES_DOMAIN)
                     || query
                         .name()
                         .to_ascii()
                         .as_str()
-                        .ends_with(&format!("{}.", config::KUBERNETES_DOMAIN))
+                        .ends_with(&format!("{}.", KUBERNETES_DOMAIN))
                 {
                     // Non-A record query for kubernetes-domain, send empty response,
                     if query.query_type().to_string() != "A" {
@@ -78,6 +81,7 @@ impl Server {
                         encoded_query,
                         buf[..size].to_vec(),
                         peer,
+                        dns_servers,
                     )
                     .await?;
                 }
@@ -94,15 +98,17 @@ impl Server {
         encoded_query: Vec<u8>,
         original_query: Vec<u8>,
         peer: SocketAddr,
+        dns_servers: Arc<Vec<ServerConfig>>,
     ) -> std::io::Result<()> {
-        let timeout = tokio::time::Duration::from_secs(config::DNS_TIMEOUT);
+        let timeout = tokio::time::Duration::from_secs(DNS_TIMEOUT);
         let original_query_for_error = original_query.clone();
-        let (tx, mut rx) = tokio::sync::mpsc::channel(config::DNS_SERVERS.len());
+        let (tx, mut rx) = tokio::sync::mpsc::channel(dns_servers.len());
 
-        for dns_server in config::DNS_SERVERS {
+        for dns_server in dns_servers.iter() {
             let query_data = encoded_query.clone();
             let original_query_cloned = original_query.clone();
             let tx = tx.clone();
+            let dns_server = dns_server.clone();
 
             tokio::spawn(async move {
                 let result = if dns_server.use_tls {
@@ -138,17 +144,15 @@ impl Server {
                     }
                 }
             });
-
-            //drop(tx);
         }
 
-        match tokio::time::timeout(Duration::from_secs(config::DNS_TIMEOUT), rx.recv()).await {
+        match tokio::time::timeout(Duration::from_secs(DNS_TIMEOUT), rx.recv()).await {
             Ok(Some((_, response_data))) => {
                 cache
                     .set(
                         original_query,
                         response_data.clone(),
-                        Duration::from_secs(config::CACHE_TTL),
+                        Duration::from_secs(CACHE_TTL),
                     )
                     .await;
 
@@ -206,11 +210,12 @@ impl Server {
                         Ok((size, peer)) => {
                             let socket_clone = Arc::clone(&self.socket);
                             let cache_clone = Arc::clone(&self.cache);
+                            let dns_servers = Arc::clone(&self.dns_servers);
                             let mut shutdown_handler = shutdown.resubscribe();
 
                             tokio::spawn(async move {
                                 tokio::select! {
-                                    _ = Server::handle_request(socket_clone, cache_clone, buf, size, peer) => {}
+                                    _ = Server::handle_request(socket_clone, cache_clone, buf, size, peer, dns_servers) => {}
                                         _ = shutdown_handler.recv() => {
                                             println!("Request handler shutting down");
                                         }

@@ -2,11 +2,18 @@ mod config;
 mod dns;
 mod server;
 
+use config::Config;
 use server::Server;
 use tokio::{net::UdpSocket, signal};
 
 #[tokio::main]
 async fn main() -> std::io::Result<()> {
+    let dns_servers = Config::load("config.toml")
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
+        .servers;
+
+    println!("DNS-server: {:?}", &dns_servers);
+
     let socket_v4 = UdpSocket::bind(config::LOCALHOST_PORT_V4).await?;
     println!(
         "DNS forwarder listening on IPv4: {}",
@@ -19,8 +26,8 @@ async fn main() -> std::io::Result<()> {
         socket_v6.local_addr()?
     );
 
-    let server_v4 = Server::new(socket_v4, 1024);
-    let server_v6 = Server::new(socket_v6, 1024);
+    let server_v4 = Server::new(socket_v4, 1024, dns_servers.clone());
+    let server_v6 = Server::new(socket_v6, 1024, dns_servers);
 
     // Shutdown-channel
     let (shutdown_tx, shutdown_rx_v4) = tokio::sync::broadcast::channel(1);
