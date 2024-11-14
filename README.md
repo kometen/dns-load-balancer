@@ -29,4 +29,6 @@ cargo build [--release]
 sudo ./target/[debug|release]/dns_load_balancer
 ```
 
+Edit the file `config.toml` to use your preferred DNS-servers.
+
 Since it connects to a port below 1024 you need priviliged access for it to start.
