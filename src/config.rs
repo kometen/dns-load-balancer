@@ -1,22 +1,34 @@
-pub struct DnsServer {
-    pub address: &'static str,
-    pub use_tls: bool,
+use anyhow::{Ok, Result};
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::Path;
+
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub struct Config {
+    pub servers: Vec<ServerConfig>,
 }
 
-pub const DNS_SERVERS: &[DnsServer] = &[
-    DnsServer {
-        address: "10.152.183.10", // kubernetes
-        use_tls: false,
-    },
-    DnsServer {
-        address: "1.1.1.1", // Cloudflare
-        use_tls: true,
-    },
-    DnsServer {
-        address: "8.8.8.8", // Google
-        use_tls: true,
-    },
-];
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub struct ServerConfig {
+    pub address: String,
+    pub use_tls: bool,
+    pub description: String,
+}
+
+impl Config {
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
+        let contents = fs::read_to_string(path.as_ref())?;
+
+        match path.as_ref().extension().and_then(|ext| ext.to_str()) {
+            Some("toml") => {
+                let config: Config = toml::from_str(&contents)?;
+                Ok(config)
+            }
+
+            _ => Err(anyhow::anyhow!("Unsupported file format")),
+        }
+    }
+}
 
 pub const LOCALHOST_PORT_V4: &str = "127.0.0.1:53";
 pub const LOCALHOST_PORT_V6: &str = "[::1]:53";
