@@ -12,8 +12,6 @@ async fn main() -> std::io::Result<()> {
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
         .servers;
 
-    println!("DNS-server: {:?}", &dns_servers);
-
     let socket_v4 = UdpSocket::bind(config::LOCALHOST_PORT_V4).await?;
     println!(
         "DNS forwarder listening on IPv4: {}",
