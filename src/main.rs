@@ -5,6 +5,7 @@ mod server;
 use anyhow::{Ok, Result};
 use clap::{Parser, Subcommand};
 use config::Config;
+use nix::unistd::{getuid, setuid, Uid};
 use server::Server;
 use tokio::{net::UdpSocket, signal};
 
@@ -24,6 +25,13 @@ enum Commands {
         config: String,
     },
     Example,
+}
+
+fn drop_privileges() -> Result<()> {
+    if Uid::effective().is_root() {
+        setuid(getuid())?;
+    }
+    Ok(())
 }
 
 #[tokio::main]
@@ -47,6 +55,8 @@ async fn main() -> Result<()> {
                 "DNS forwarder listening on IPv6: {}",
                 socket_v6.local_addr()?
             );
+
+            drop_privileges()?;
 
             let server_v4 = Server::new(socket_v4, 1024, dns_servers.clone());
             let server_v6 = Server::new(socket_v6, 1024, dns_servers);
