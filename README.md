@@ -26,9 +26,10 @@ Clone, build and run the project with
 
 ```
 cargo build [--release]
-sudo ./target/[debug|release]/dns_load_balancer
+sudo ./target/[debug|release]/dns_load_balancer run --config [CONFIG]
 ```
 
-Edit the file `config.toml` to use your preferred DNS-servers.
+An example of a configuration is printed to the console with `./target/release/dns_load_balancer example`.
+Save end edit the file `config.toml` to use your preferred DNS-servers.
 
-Since it connects to a port below 1024 you need priviliged access for it to start.
+Since it connects to port 53 you need priviliged access for it to start.
