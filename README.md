@@ -80,4 +80,5 @@ postgresql.invoice.svc.cluster.local has address 10.152.183.95
 ```
 
 Had I configured the Kubernetes DNS as the only DNS-server, either in network-settings or in `config.toml` no nameresolution would take place.
-By adding Cloudflare and Google nameresolution will ususally work and only fail if the Wireguard VPN is not connected.
+By adding Cloudflare and Google nameresolution will usually work and only fail if the Wireguard VPN is not connected and I query for services in
+Kubernetes.
