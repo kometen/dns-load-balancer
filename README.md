@@ -29,6 +29,13 @@ cargo build [--release]
 sudo ./target/[debug|release]/dns_load_balancer run --config [CONFIG]
 ```
 
+Install via `brew tap`.
+
+```
+brew tap kometen/dns-load-balancer
+brew install dns-load-balancer
+```
+
 An example of a configuration is printed to the console with `./target/release/dns_load_balancer example`.
 Save end edit the file `config.toml` to use your preferred DNS-servers.
 
