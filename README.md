@@ -33,3 +33,44 @@ An example of a configuration is printed to the console with `./target/release/d
 Save end edit the file `config.toml` to use your preferred DNS-servers.
 
 Since it connects to port 53 you need priviliged access for it to start.
+
+As an example here is my `config.toml`:
+
+```
+$ cat /usr/local/etc/dns-load-balancer/config.toml
+[[servers]]
+address = "1.1.1.1"
+use_tls = true
+description = "Cloudflare DNS"
+
+[[servers]]
+address = "8.8.8.8"
+use_tls = true
+description = "Google DNS"
+
+[[servers]]
+address = "10.152.183.10"
+use_tls = false
+description = "Kubernetes DNS"
+```
+
+And when Wireguard VPN-tunnel is not connected to Kubernetes DNS:
+
+```
+$ host postgresql.invoice.svc.cluster.local
+DNS resolution failed: Failed to resolve hostname: postgresql.invoice.svc.cluster.local.
+Root cause: no record found for Query { name: Name("postgresql.invoice.svc.cluster.local."), query_type: AAAA, query_class: IN }
+Error: Failed to resolve hostname: postgresql.invoice.svc.cluster.local.
+
+Caused by:
+    no record found for Query { name: Name("postgresql.invoice.svc.cluster.local."), query_type: AAAA, query_class: IN }
+```
+
+When connected:
+```
+$ host postgresql.invoice.svc.cluster.local
+postgresql.invoice.svc.cluster.local has address 10.152.183.95
+```
+
+Had I configured the Kubernetes DNS as the only DNS-server, either in network-settings or in `config.toml` no nameresolution would take place.
+By adding Cloudflare and Google nameresolution will ususally work and only fail if the Wireguard VPN is not connected.
