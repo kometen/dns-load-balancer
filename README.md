@@ -26,7 +26,7 @@ Clone, build and run the project with
 
 ```
 cargo build [--release]
-sudo ./target/[debug|release]/dns_load_balancer run --config [CONFIG]
+sudo ./target/[debug|release]/dns_load_balancer run --config <CONFIG> [--port PORT]
 ```
 
 Install via `brew tap`.
@@ -34,6 +34,35 @@ Install via `brew tap`.
 ```
 brew tap kometen/dns-load-balancer
 brew install dns-load-balancer
+```
+
+Install on FreeBSD 14:
+
+```
+pkg install rust
+pkg install cmake
+pkg install llvm
+
+cargo install --locked bindgen-cli
+```
+
+Add $HOME/.cargo/bin to PATH
+
+```
+export LIBCLANG_PATH=/usr/local/llvm19/lib/libclang.so
+cargo build --release
+
+cp ./target/release/dns_load_balancer /usr/local/bin/dns-load-balancer
+```
+
+Copy the `dnsloadbalancer` script to `/usr/local/etc/rc.d`, make it executable with `chmod 0755 /usr/local/etc/rc.d/dnsloadbalancer`
+and append the content of the file `rc.conf` to `/etc/rc.conf`. Copy the example `config.toml` file to `/usr/local/etc/dns-load-balancer.toml`.
+
+Modify `named.conf` in BIND DNS so these two lines are activated:
+
+```
+listen-on  { YOUR-PRIMARY-IP-ADDRESS (nic); };
+forwarders { 127.0.0.1 port 5353; };
 ```
 
 An example of a configuration is printed to the console with `./target/release/dns_load_balancer example`.

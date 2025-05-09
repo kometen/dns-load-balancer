@@ -1,0 +1,24 @@
+#!/bin/sh
+
+# PROVIDE: dnsloadbalancer
+# REQUIRE: NETWORKING
+# KEYWORD: shutdown
+
+. /etc/rc.subr
+
+name="dnsloadbalancer"
+rcvar=dnsloadbalancer_enable
+
+load_rc_config $name
+
+: ${dnsloadbalancer_enable:="NO"}
+: ${dnsloadbalancer_bin:="/usr/local/bin/dns-load-balancer"}
+: ${dnsloadbalancer_config:=""}
+: ${dnsloadbalancer_port:=""}
+
+pidfile="/var/run/${name}.pid"
+procname="${dnsloadbalancer_bin}"
+command="/usr/sbin/daemon"
+command_args="-p ${pidfile} -f ${dnsloadbalancer_bin} run --config ${dnsloadbalancer_config} --port ${dnsloadbalancer_port}"
+
+run_rc_command "$1"
