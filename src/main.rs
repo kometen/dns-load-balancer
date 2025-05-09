@@ -23,6 +23,9 @@ enum Commands {
     Run {
         #[arg(short, long, group = "mode")]
         config: String,
+
+        #[arg(short, long, default_value_t = 5353)]
+        port: u16,
     },
     Example,
 }
@@ -39,18 +42,21 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Run { config } => {
+        Commands::Run { config, port } => {
             let dns_servers = Config::load(&config)
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?
                 .servers;
 
-            let socket_v4 = UdpSocket::bind(config::LOCALHOST_PORT_V4).await?;
+            let ipv4_addr = format!("127.0.0.1:{}", port);
+            let ipv6_addr = format!("[::1]:{}", port);
+
+            let socket_v4 = UdpSocket::bind(&ipv4_addr).await?;
             println!(
                 "DNS forwarder listening on IPv4: {}",
                 socket_v4.local_addr()?
             );
 
-            let socket_v6 = UdpSocket::bind(config::LOCALHOST_PORT_V6).await?;
+            let socket_v6 = UdpSocket::bind(&ipv6_addr).await?;
             println!(
                 "DNS forwarder listening on IPv6: {}",
                 socket_v6.local_addr()?
