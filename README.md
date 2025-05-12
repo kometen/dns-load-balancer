@@ -159,7 +159,7 @@ stateDiagram
     state "client" as client2
     state "dns load balancer" as DLB
     state "First response returned" as response
-    state "Cloudflare DNS\n1.1.1.1\nTLS" as cloudflare
+    state "Cloudflare DNS</bn >1.1.1.1\nTLS" as cloudflare
     state "Google DNS\n8.8.8.8\nTLS" as google
     state "Kubernetes DNS\n10.152.183.10\ntext" as kubernetes
     
