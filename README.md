@@ -152,3 +152,29 @@ This project was built to avoid DNS pain when juggling public and private networ
 
 Feel free to contribute, file issues, or fork for your own use cases.
 Happy resolving! 🎉
+
+```mermaid
+stateDiagram
+    state "client" as client1
+    state "client" as client2
+    state "dns load balancer" as DLB
+    state "First response returned" as response
+    state "Cloudflare DNS\n1.1.1.1\nTLS" as cloudflare
+    state "Google DNS\n8.8.8.8\nTLS" as google
+    state "Kubernetes DNS\n10.152.183.10\ntext" as kubernetes
+    
+    client1 --> DLB : query
+
+    DLB --> cloudflare:::center
+    DLB --> google:::center
+    DLB --> kubernetes:::center
+    
+    cloudflare --> response
+    google --> response
+    kubernetes --> response
+    
+    response --> client2
+    
+    classDef center text-align:center
+        
+```
