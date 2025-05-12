@@ -1,81 +1,92 @@
 # dns-load-balancer
 
-Forward DNS queries to DNS-servers. Sometimes I need to access a kubernetes-cluster
-using a wireguard vpn-tunnel and access some services. So I usually let wireguard
-define the DNS-server I am using since it also resolve to public DNS besides the
-internal kubernetes-services.
+A fast and flexible DNS forwarder designed for modern multi-environment setups.
+It queries multiple upstream DNS servers in parallel (with optional DNS-over-TLS), and returns the first successful response — no more waiting for broken or unreachable DNS endpoints to timeout.
 
-Sometimes the vpn-tunnel becomes stale and I need to disconnect and reconnect. So
-I wanted a DNS-forwarder that could talk to one or more public DNS-servers besides
-the kubernetes DNS-server. I started out having Claude make a simpel DNS-forwarder.
+## ✨ Why use this?
 
-During the development I wanted to use tokio for asynchronous tasks. Claude have
-done the heavy lifting.
+If you’ve ever:
+- Used a VPN to access internal DNS (e.g., Kubernetes `cluster.local` services)
+- Had DNS fail or hang when the VPN dropped
+- Manually edited `/etc/resolv.conf` to switch between internal and public DNS
+- Needed to mix plaintext and TLS-based DNS forwarders
 
-This DNS-forwarder will send out a request to each DNS-server defined in `dns-load-balancer.rs`
-and stop when it receives an answer or None if name resolution was not successful.
+...then `dns-load-balancer` solves that cleanly.
 
-I noticed a delay when connecting to a kubernetes-service and it turned out the client
-was issuing a DNS-request for type A (IPv4), AAAA (IPv6) and that introduced this
-delay. The client in this case is `psql` to access a PostgreSQL database.
+It acts as a local resolver that can:
+- Query several upstream servers in parallel
+- Short-circuit and respond as soon as **any** server returns a valid response
+- Use **DNS-over-TLS** (DoT) selectively per upstream
+- Handle quirks like Kubernetes `cluster.local` domains gracefully
 
-So a check is added that if the request is for a `cluster.local.` any request other
-than a type A will be ignored.
+## ⚙️ How it works
 
-Clone, build and run the project with
+When a DNS query is received, `dns-load-balancer`:
+1. Sends the request to all configured upstream servers (TLS or plaintext)
+2. Returns the **first successful response** (A/AAAA/other)
+3. If no valid result is found, returns a not-found error
 
-```
-cargo build [--release]
-sudo ./target/[debug|release]/dns_load_balancer run --config <CONFIG> [--port PORT]
-```
+For `cluster.local` queries, it can be configured to ignore non-`A` requests (e.g., AAAA) to reduce latency in environments like Kubernetes.
 
-Install via `brew tap`.
+## 🛠 Installation
 
-```
+### Option 1: Homebrew (macOS & Linux)
+
+```sh
 brew tap kometen/dns-load-balancer
 brew install dns-load-balancer
 ```
 
-Install on FreeBSD 14:
+### Option 2: Manual (FreeBSD)
 
-```
-pkg install rust
-pkg install cmake
-pkg install llvm
+**Prerequisites:**
 
+```sh
+pkg install rust cmake llvm
 cargo install --locked bindgen-cli
-```
-
-Add $HOME/.cargo/bin to PATH
-
-```
 export LIBCLANG_PATH=/usr/local/llvm19/lib/libclang.so
-cargo build --release
+```
 
+**Build and install:**
+
+```sh
+cargo build --release
 cp ./target/release/dns_load_balancer /usr/local/bin/dns-load-balancer
 ```
 
-Copy the `dnsloadbalancer` script to `/usr/local/etc/rc.d`, make it executable with `chmod 0755 /usr/local/etc/rc.d/dnsloadbalancer`
-and append the content of the file `rc.conf` to `/etc/rc.conf`. Copy the example `dns-load-balancer.toml` file to `/usr/local/etc/dns-load-balancer.toml`.
+**Enable as a service:**
 
-Modify `named.conf` in BIND DNS so these two lines are activated:
+1. Copy the `dnsloadbalancer` service file to `/usr/local/etc/rc.d/`
 
+2. Make it executable:
+
+```sh
+chmod 0755 /usr/local/etc/rc.d/dnsloadbalancer
 ```
-listen-on  { YOUR-PRIMARY-IP-ADDRESS (nic); };
-forwarders { 127.0.0.1 port 5353; };
+
+3. Add to `/etc/rc.conf`:
+
+```sh
+dnsloadbalancer_enable="YES"
 ```
 
-Start `dnsloadbalancer` with `service dnsloadbalancer start` or `/usr/local/etc/rc.d/dnsloadbalancer start`.
+4. Start it:
 
-An example of a configuration is printed to the console with `./target/release/dns_load_balancer example`.
-Save end edit the file `dns-load-balancer.toml` to use your preferred DNS-servers.
-
-If it connects to port 53 you need priviliged access for it to start.
-
-As an example here is my `dns-load-balancer.toml`:
-
+```sh
+service dnsloadbalancer start
 ```
-$ cat /usr/local/etc/dns-load-balancer/dns-load-balancer.toml
+
+## 🔧 Configuration
+
+Generate an example config:
+
+```sh
+dns-load-balancer example > /usr/local/etc/dns-load-balancer.toml
+```
+
+Edit it to your needs:
+
+```toml
 [[servers]]
 address = "1.1.1.1"
 use_tls = true
@@ -89,27 +100,55 @@ description = "Google DNS"
 [[servers]]
 address = "10.152.183.10"
 use_tls = false
-description = "Kubernetes DNS"
+description = "Kubernetes internal DNS"
 ```
 
-And when Wireguard VPN-tunnel is not connected to Kubernetes DNS:
+If you want to run on port 53 (privileged), run as root or via a service manager. Otherwise, you can choose any unprivileged port (e.g., 5353) and configure BIND to forward to it.
 
-```
-$ host postgresql.invoice.svc.cluster.local
-DNS resolution failed: Failed to resolve hostname: postgresql.invoice.svc.cluster.local.
-Root cause: no record found for Query { name: Name("postgresql.invoice.svc.cluster.local."), query_type: AAAA, query_class: IN }
-Error: Failed to resolve hostname: postgresql.invoice.svc.cluster.local.
+## 🧩 Integrating with BIND
 
-Caused by:
-    no record found for Query { name: Name("postgresql.invoice.svc.cluster.local."), query_type: AAAA, query_class: IN }
+To use `dns-load-balancer` as a forwarder for BIND:
+
+In `named.conf`:
+```conf
+options {
+    listen-on { 10.254.253.4; }; // Your primary interface
+    forwarders {
+        127.0.0.1 port 5353;
+    };
+    forward only;
+};
 ```
 
-When connected:
-```
+## ✅ Example Use Case
+
+```sh
 $ host postgresql.invoice.svc.cluster.local
 postgresql.invoice.svc.cluster.local has address 10.152.183.95
 ```
 
-Had I configured the Kubernetes DNS as the only DNS-server, either in network-settings or in `dns-load-balancer.toml` no nameresolution would take place.
-By adding Cloudflare and Google nameresolution will usually work and only fail if the Wireguard VPN is not connected and I query for services in
-Kubernetes.
+When disconnected from VPN:
+
+```sh
+DNS resolution failed: Failed to resolve hostname: postgresql.invoice.svc.cluster.local.
+Root cause: no record found for Query { name: ..., type: AAAA }
+```
+
+Without needing to change config, the load balancer continues resolving public domains using Cloudflare or Google DNS, and will only fail for cluster-specific records when the VPN is down.
+
+## 📦 Features
+	•	✅ Parallel DNS querying
+	•	✅ DNS-over-TLS (DoT) support
+	•	✅ Kubernetes-aware: filter non-A records
+	•	✅ Simple TOML config
+	•	✅ Usable as a local forwarder for BIND, Unbound, etc.
+	•	✅ Works on FreeBSD, Linux, macOS
+
+💡 Inspired by a real need
+
+This project was built to avoid DNS pain when juggling public and private networks, especially when VPNs are flaky or DNS servers are inconsistent. It started as a quick solution built with Claude AI and Rust — and turned out to be much more useful than expected.
+
+⸻
+
+Feel free to contribute, file issues, or fork for your own use cases.
+Happy resolving! 🎉
