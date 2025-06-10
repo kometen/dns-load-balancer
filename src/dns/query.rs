@@ -100,3 +100,85 @@ pub async fn query_dns(
 
     Ok((dns_server.to_string(), None))
 }
+
+pub async fn query_dns_with_fallback(
+    dns_server: &str,
+    query_data: Vec<u8>,
+) -> io::Result<(String, Option<Vec<u8>>)> {
+    // First try DNS over TLS
+    match query_dns_tls(dns_server, query_data.clone()).await {
+        Ok((server, Some(response))) => {
+            // DoT succeeded and returned a valid response
+            Ok((server, Some(response)))
+        }
+        Ok((server, None)) => {
+            // DoT succeeded but returned no data, try cleartext fallback
+            println!(
+                "DoT returned no data for {}, falling back to cleartext DNS",
+                server
+            );
+            query_dns(dns_server, query_data).await
+        }
+        Err(e) => {
+            // DoT failed entirely, try cleartext fallback
+            println!(
+                "DoT failed for {} ({}), falling back to cleartext DNS",
+                dns_server, e
+            );
+            query_dns(dns_server, query_data).await
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hickory_proto::op::{Message, Query};
+    use hickory_proto::rr::{Name, RecordType};
+    use std::str::FromStr;
+
+    fn create_test_query() -> Vec<u8> {
+        let mut message = Message::new();
+        message.set_id(12345);
+        let name = Name::from_str("example.com").unwrap();
+        let query = Query::query(name, RecordType::A);
+        message.add_query(query);
+        message.to_vec().unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_fallback_functionality_exists() {
+        // This test verifies that the fallback function exists and can be called
+        // In a real environment, this would test against actual DNS servers
+        let query_data = create_test_query();
+
+        // Test with a non-existent server (should fail gracefully)
+        let result = query_dns_with_fallback("192.0.2.1", query_data).await;
+
+        // The function should return without panicking, even if it fails
+        match result {
+            Ok((server, _response)) => {
+                assert_eq!(server, "192.0.2.1");
+                // Response might be None due to network failure, which is expected
+            }
+            Err(_) => {
+                // Network errors are expected when testing with unreachable servers
+            }
+        }
+    }
+
+    #[test]
+    fn test_create_dns_query() {
+        // Test that we can create a valid DNS query
+        let query_data = create_test_query();
+        assert!(!query_data.is_empty());
+
+        // Verify we can parse it back
+        let parsed = Message::from_bytes(&query_data);
+        assert!(parsed.is_ok());
+
+        let message = parsed.unwrap();
+        assert_eq!(message.id(), 12345);
+        assert_eq!(message.queries().len(), 1);
+    }
+}

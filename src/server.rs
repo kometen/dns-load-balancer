@@ -1,6 +1,6 @@
 use crate::config::{ServerConfig, CACHE_TTL, DNS_TIMEOUT, KUBERNETES_DOMAIN};
 use crate::dns::cache::DnsCache;
-use crate::dns::query::{query_dns, query_dns_tls};
+use crate::dns::query::{query_dns, query_dns_with_fallback};
 use hickory_proto::op::{Message, MessageType, ResponseCode};
 use hickory_proto::serialize::binary::BinDecodable;
 use std::net::SocketAddr;
@@ -114,7 +114,7 @@ impl Server {
                 let result = if dns_server.use_tls {
                     match tokio::time::timeout(
                         timeout,
-                        query_dns_tls(&dns_server.address, query_data),
+                        query_dns_with_fallback(&dns_server.address, query_data),
                     )
                     .await
                     {
